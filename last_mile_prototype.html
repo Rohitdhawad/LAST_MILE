@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LAST-MILE - Social Impact Logistics</title>
+    
+    <!-- Tailwind CSS for Styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        navy: { 700: '#1e3a8a', 800: '#1e40af', 900: '#172554' }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- React & ReactDOM (Development) -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    
+    <!-- Babel for in-browser JSX parsing -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Lucide Icons (Standalone Script) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        .tab-btn { padding: 0.5rem 1rem; cursor: pointer; border-radius: 0.375rem; transition: background 0.2s; }
+        .tab-btn.active { background-color: #1e3a8a; color: white; font-weight: bold; }
+        .tab-btn:hover:not(.active) { background-color: #e5e7eb; }
+    </style>
+</head>
+<body class="bg-gray-50 text-black min-h-screen flex flex-col">
+    <div id="root" class="flex-grow flex flex-col"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // Custom simple Icon wrapper to use Lucide in React CDN setup
+        const Icon = ({ name, size = 20, className = "" }) => {
+            const ref = React.useRef(null);
+            useEffect(() => {
+                if (ref.current && window.lucide) {
+                    ref.current.innerHTML = "";
+                    const iconElement = window.lucide.createElement(window.lucide.icons[name]);
+                    if(iconElement) {
+                        iconElement.setAttribute('width', size);
+                        iconElement.setAttribute('height', size);
+                        iconElement.setAttribute('class', className);
+                        ref.current.appendChild(iconElement);
+                    }
+                }
+            }, [name, size, className]);
+            return <span ref={ref} className="inline-flex items-center justify-center"></span>;
+        };
+
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('home');
+            const [systemTime, setSystemTime] = useState(new Date());
+            const [logs, setLogs] = useState([{ time: new Date(), msg: "System Initialized." }]);
+            
+            // Core State
+            const [donations, setDonations] = useState([
+                { id: 'd1', food: 'Cooked Meals', quantity: 180, originalQuantity: 180, location: 'City Banquet', safeUntil: new Date(Date.now() + 75*60000), maxDeliveryTimeMinutes: 45, status: 'published' }
+            ]);
+            const [shelters, setShelters] = useState([
+                { id: 's1', name: 'Downtown Shelter', demand: 100, capacity: 150 }
+            ]);
+            const [vehicles, setVehicles] = useState([
+                { id: 'v1', vid: 'V-8492', type: 'Scooter', capacity: 40, status: 'idle' },
+                { id: 'v2', vid: 'V-1123', type: 'Van', capacity: 200, status: 'idle' }
+            ]);
+            const [deliveries, setDeliveries] = useState([]);
+
+            const log = (msg) => {
+                setLogs(prev => [{ time: systemTime, msg }, ...prev]);
+            };
+
+            const handlePublishDonation = (e) => {
+                e.preventDefault();
+                const form = e.target;
+                const newDonation = {
+                    id: 'd' + Date.now(),
+                    food: form.food.value,
+                    quantity: parseInt(form.qty.value),
+                    originalQuantity: parseInt(form.qty.value),
+                    location: form.loc.value,
+                    safeUntil: new Date(systemTime.getTime() + parseInt(form.expiry.value)*60000),
+                    maxDeliveryTimeMinutes: parseInt(form.maxTime.value),
+                    status: 'published'
+                };
+                setDonations([...donations, newDonation]);
+                log(`New donation published: ${newDonation.quantity} ${newDonation.food}`);
+                form.reset();
+            };
+
+            const acceptRide = (donationId) => {
+                const idleVehicle = vehicles.find(v => v.status === 'idle');
+                if (!idleVehicle) {
+                    alert("No idle vehicles available in fleet!");
+                    return;
+                }
+                const donation = donations.find(d => d.id === donationId);
+                const quantityToTake = Math.min(donation.quantity, idleVehicle.capacity);
+                
+                // Update vehicle
+                setVehicles(vehicles.map(v => v.id === idleVehicle.id ? { ...v, status: 'moving' } : v));
+                
+                // Update donation
+                setDonations(donations.map(d => {
+                    if (d.id === donationId) {
+                        const newQ = d.quantity - quantityToTake;
+                        return { ...d, quantity: newQ, status: newQ === 0 ? 'allocated' : 'published' };
+                    }
+                    return d;
+                }));
+
+                // Create delivery
+                setDeliveries([...deliveries, {
+                    id: 'del' + Date.now(),
+                    donationId: donation.id,
+                    vehicleId: idleVehicle.id,
+                    quantity: quantityToTake,
+                    status: 'in-transit',
+                    startTime: systemTime
+                }]);
+
+                log(`Transporter ${idleVehicle.vid} accepted ${quantityToTake} ${donation.food}`);
+            };
+
+            const Navigation = () => (
+                <nav className="flex gap-2 flex-wrap bg-white shadow-sm p-2 rounded-lg mb-6 border border-gray-200">
+                    <button onClick={() => setActiveTab('home')} className={`tab-btn ${activeTab === 'home' ? 'active' : ''}`}>Home</button>
+                    <button onClick={() => setActiveTab('dashboard')} className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`}>Dashboard</button>
+                    <button onClick={() => setActiveTab('donor')} className={`tab-btn ${activeTab === 'donor' ? 'active' : ''}`}>Donor Desk</button>
+                    <button onClick={() => setActiveTab('transporter')} className={`tab-btn ${activeTab === 'transporter' ? 'active' : ''}`}>Transporter Hub</button>
+                    <button onClick={() => setActiveTab('map')} className={`tab-btn ${activeTab === 'map' ? 'active' : ''}`}>Live Map</button>
+                </nav>
+            );
+
+            return (
+                <div className="flex-grow flex flex-col">
+                    <header className="bg-white border-b-4 border-navy-900 shadow-sm sticky top-0 z-50">
+                        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <Icon name="Truck" size={32} className="text-navy-800" />
+                                <div>
+                                    <h1 className="text-2xl font-black text-navy-900 leading-tight">LAST-MILE</h1>
+                                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Social Impact & Civic Micro-Logistics</p>
+                                </div>
+                            </div>
+                            <div className="text-sm font-bold text-navy-800 bg-gray-100 px-3 py-1 rounded">
+                                System Time: {systemTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="flex-grow max-w-7xl mx-auto w-full px-4 py-6">
+                        <Navigation />
+                        
+                        {activeTab === 'home' && (
+                            <div className="text-center py-20 px-4">
+                                <h2 className="text-5xl font-black text-navy-900 mb-6">The Last-Mile Spoilage Trap</h2>
+                                <p className="text-xl text-gray-700 max-w-3xl mx-auto mb-10 leading-relaxed">
+                                    Coordinating perishable surplus and fragile aid under uncertainty. We connect restaurants, hostels, and pharmacies with volunteer riders and shelters dynamically, preventing waste and ensuring safe deliveries.
+                                </p>
+                                <div className="flex justify-center gap-4">
+                                    <button onClick={() => setActiveTab('donor')} className="bg-navy-800 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-navy-700 shadow-lg">Donate Food</button>
+                                    <button onClick={() => setActiveTab('transporter')} className="bg-white text-navy-900 border-2 border-navy-900 px-8 py-4 rounded-xl font-bold text-lg hover:bg-gray-50 shadow-lg">Drive & Deliver</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'donor' && (
+                            <div className="max-w-2xl mx-auto">
+                                <div className="bg-white p-6 rounded-xl shadow border border-gray-200">
+                                    <h2 className="text-2xl font-bold text-navy-900 mb-6 flex items-center gap-2">
+                                        <Icon name="HeartHandshake" className="text-navy-700" /> Donor Desk
+                                    </h2>
+                                    <form onSubmit={handlePublishDonation} className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-bold mb-1">Food/Aid Type</label>
+                                            <input name="food" required className="w-full border-2 border-gray-300 p-3 rounded-lg focus:border-navy-700 outline-none" placeholder="e.g. Cooked Meals, Essential Kits" />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-sm font-bold mb-1">Quantity</label>
+                                                <input name="qty" type="number" required min="1" className="w-full border-2 border-gray-300 p-3 rounded-lg focus:border-navy-700 outline-none" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold mb-1">Location</label>
+                                                <input name="loc" required className="w-full border-2 border-gray-300 p-3 rounded-lg focus:border-navy-700 outline-none" placeholder="Pickup Address" />
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-sm font-bold mb-1">Safe Until (Mins from now)</label>
+                                                <input name="expiry" type="number" required min="1" className="w-full border-2 border-gray-300 p-3 rounded-lg focus:border-navy-700 outline-none" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold mb-1">Max Delivery Time (Mins)</label>
+                                                <input name="maxTime" type="number" required min="1" className="w-full border-2 border-gray-300 p-3 rounded-lg focus:border-navy-700 outline-none" placeholder="e.g. 30" />
+                                            </div>
+                                        </div>
+                                        <button type="submit" className="w-full bg-navy-800 text-white p-4 rounded-lg font-bold text-lg hover:bg-navy-700 mt-4 transition-colors">
+                                            Publish Donation to Network
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'transporter' && (
+                            <div className="space-y-6">
+                                <h2 className="text-2xl font-bold text-navy-900 flex items-center gap-2 mb-4">
+                                    <Icon name="Navigation" className="text-navy-700" /> Transporter Hub
+                                </h2>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="bg-white rounded-xl shadow border border-gray-200 overflow-hidden">
+                                        <div className="bg-navy-900 text-white p-4 font-bold">Open Published Donations</div>
+                                        <div className="p-4 space-y-3">
+                                            {donations.filter(d => d.quantity > 0).map(d => (
+                                                <div key={d.id} className="border-2 border-gray-100 p-4 rounded-lg bg-gray-50">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div>
+                                                            <div className="font-bold text-lg">{d.quantity}x {d.food}</div>
+                                                            <div className="text-sm text-gray-600 flex items-center gap-1"><Icon name="MapPin" size={14}/> {d.location}</div>
+                                                        </div>
+                                                        <div className="bg-blue-100 text-navy-800 text-xs font-bold px-2 py-1 rounded">
+                                                            <Icon name="Clock" size={12} className="inline mr-1"/> &lt; {d.maxDeliveryTimeMinutes}m
+                                                        </div>
+                                                    </div>
+                                                    <button onClick={() => acceptRide(d.id)} className="w-full bg-navy-800 text-white font-bold py-2 rounded mt-2 hover:bg-navy-700">
+                                                        Accept Ride directly
+                                                    </button>
+                                                </div>
+                                            ))}
+                                            {donations.filter(d => d.quantity > 0).length === 0 && (
+                                                <div className="text-center p-6 text-gray-500 font-bold">No pending donations available.</div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white rounded-xl shadow border border-gray-200 overflow-hidden">
+                                        <div className="bg-navy-900 text-white p-4 font-bold">Your Active Fleet</div>
+                                        <div className="p-4 space-y-3">
+                                            {vehicles.map(v => (
+                                                <div key={v.id} className="border-2 border-gray-100 p-4 rounded-lg flex justify-between items-center bg-gray-50">
+                                                    <div>
+                                                        <div className="font-bold text-lg flex items-center gap-2"><Icon name="Truck" size={18}/> {v.vid}</div>
+                                                        <div className="text-sm text-gray-600">{v.type} • Capacity: {v.capacity}</div>
+                                                    </div>
+                                                    <div>
+                                                        <span className={`px-3 py-1 rounded text-xs font-bold ${v.status === 'idle' ? 'bg-gray-200 text-gray-700' : 'bg-navy-100 text-navy-800 border border-navy-800'}`}>
+                                                            {v.status.toUpperCase()}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'dashboard' && (
+                            <div className="space-y-6">
+                                <h2 className="text-2xl font-bold text-navy-900 flex items-center gap-2 mb-4">
+                                    <Icon name="Activity" className="text-navy-700" /> Control Dashboard
+                                </h2>
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    <div className="bg-white p-6 shadow rounded-xl border border-gray-200 border-l-4 border-l-navy-800">
+                                        <div className="text-sm font-bold text-gray-500 uppercase">Available Surplus</div>
+                                        <div className="text-3xl font-black text-navy-900">{donations.reduce((sum, d) => sum + d.quantity, 0)}</div>
+                                    </div>
+                                    <div className="bg-white p-6 shadow rounded-xl border border-gray-200 border-l-4 border-l-navy-800">
+                                        <div className="text-sm font-bold text-gray-500 uppercase">Active Deliveries</div>
+                                        <div className="text-3xl font-black text-navy-900">{deliveries.length}</div>
+                                    </div>
+                                    <div className="bg-white p-6 shadow rounded-xl border border-gray-200 border-l-4 border-l-navy-800">
+                                        <div className="text-sm font-bold text-gray-500 uppercase">Idle Transporters</div>
+                                        <div className="text-3xl font-black text-navy-900">{vehicles.filter(v=>v.status==='idle').length}</div>
+                                    </div>
+                                    <div className="bg-white p-6 shadow rounded-xl border border-gray-200 border-l-4 border-l-navy-800">
+                                        <div className="text-sm font-bold text-gray-500 uppercase">Shelter Demand</div>
+                                        <div className="text-3xl font-black text-navy-900">{shelters.reduce((sum, s) => sum + s.demand, 0)}</div>
+                                    </div>
+                                </div>
+                                <div className="bg-gray-900 text-white p-4 rounded-xl shadow">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h3 className="font-bold flex items-center gap-2"><Icon name="Info" size={16} /> Live Dispatch Logs</h3>
+                                    </div>
+                                    <div className="h-64 overflow-y-auto space-y-2 font-mono text-sm bg-black p-4 rounded border border-gray-800">
+                                        {logs.map((l, i) => (
+                                            <div key={i} className="text-gray-300">
+                                                <span className="text-gray-500">[{l.time.toLocaleTimeString()}]</span> <span className="text-sky-300">{l.msg}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'map' && (
+                            <div className="space-y-6">
+                                <h2 className="text-2xl font-bold text-navy-900 flex items-center gap-2 mb-4">
+                                    <Icon name="MapPin" className="text-navy-700" /> Live Tracking Map
+                                </h2>
+                                <div className="bg-white rounded-xl shadow border border-gray-200 p-6">
+                                    <div className="aspect-video bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center relative overflow-hidden">
+                                        <div className="text-center text-gray-400 font-bold mb-8">
+                                            <Icon name="MapPin" size={48} className="mx-auto mb-2 opacity-50" />
+                                            Simulation Map Grid
+                                        </div>
+                                        {vehicles.map((v, i) => (
+                                            <div key={v.id} className="absolute transition-all duration-1000" 
+                                                 style={{ left: `${20 + (i * 30)}%`, top: v.status === 'moving' ? '40%' : '70%' }}>
+                                                <div className="bg-navy-900 text-white text-xs font-bold px-2 py-1 rounded shadow-lg whitespace-nowrap mb-1">
+                                                    {v.vid} {v.status === 'moving' ? '(In-Transit)' : '(Idle)'}
+                                                </div>
+                                                <div className={`w-4 h-4 rounded-full mx-auto ${v.status === 'moving' ? 'bg-navy-500 animate-pulse' : 'bg-gray-400'}`}></div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    <footer className="bg-white border-t border-gray-200 mt-auto">
+                        <div className="max-w-7xl mx-auto px-4 py-6 text-center">
+                            <p className="text-sm font-bold text-gray-600 uppercase tracking-wide">Last-Mile Platform</p>
+                            <p className="text-sm text-gray-500 mt-2 font-medium">Contact Support: support@last-meal.com</p>
+                        </div>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
